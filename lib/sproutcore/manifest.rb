@@ -1,5 +1,7 @@
 module SproutCore
   class Manifest
+    attr_reader :javascripts, :stylesheets
+
     def initialize
       @javascripts = {}
       @stylesheets = {}
@@ -22,24 +24,12 @@ module SproutCore
       nil
     end
 
-    def javascripts
-      @javascripts.each do |k,v|
-        puts
-        puts k
-        puts "<<<<========================>>>>"
-        puts v.compile
-        puts
-      end
+    def find_js(js_target)
+      @javascripts.find { |target, list| target == js_target }.last
     end
 
-    def stylesheets
-      @stylesheets.each do |k,v|
-        puts
-        puts k
-        puts "<<<<========================>>>>"
-        puts v.compile
-        puts
-      end
+    def find_css(css_target)
+      @stylesheets.find { |target, list| target == css_target }.last
     end
   end
 end

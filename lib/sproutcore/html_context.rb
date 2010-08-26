@@ -5,10 +5,12 @@ module SproutCore
     end
 
     def sc_static(static)
-      if static = manifest.find_static(static)
-        static.destination
+      if found_static = @manifest.find_static(static)
+        found_static.destination
       else
-        raise "#{static} could not be found in any of the loaded frameworks, themes, or your app"
+        puts "WARN: #{static} could not be found in any of the loaded frameworks, themes, or your app"
+        puts "from #{caller[0]}"
+        ""
       end
     end
 
@@ -21,9 +23,9 @@ module SproutCore
       sheets = []
       @manifest.stylesheets.each do |name, list|
         location = list.destination
-        sheets = %{<link href="#{location} rel="stylesheet" type="text/css" />}
+        sheets << %{<link href="#{location}" rel="stylesheet" type="text/css" />}
       end
-      sheets.join("\n")
+      sheets.join("\n    ")
     end
 
     def javascripts
@@ -32,8 +34,8 @@ module SproutCore
         location = list.destination
         scripts << %{<script type="text/javascript" src="#{location}"></script>}
       end
-      scripts << %{<script type="text/javascript>String.preferredLanguage = "en";</script>}
-      scripts.join("\n")
+      scripts << %{<script type="text/javascript">String.preferredLanguage = "en";</script>}
+      scripts.join("\n    ")
     end
   end
 end

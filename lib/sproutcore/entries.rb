@@ -34,8 +34,9 @@ module SproutCore
       @entry_lookup = {}
 
       Dir["#{@target_dir}/**/*.#{self.class.ext}"].each do |file|
+        next if file =~ %r{^#{@target_dir}/(debug|tests)}
         source = File.read(file)
-        requires = source.scan(%r{sc_require\(\s*['"](.*)['"]\)}).flatten
+        requires = source.scan(%r{\b(?:sc_)?require\(\s*['"](.*)['"]\)}).flatten
 
         add Entry.new(file[%r{#{@target_dir}/(.*)\.#{self.class.ext}}, 1], requires, source)
       end
@@ -62,15 +63,21 @@ module SproutCore
     end
 
     def compile
-      output = inject("") do |output, file|
-        output << "/* >>>>>>>>>> BEGIN #{file.name}.#{self.class.ext} */\n"
-        output << "#{file.source}\n"
+      @compiled ||= begin
+        output = inject("") do |output, file|
+          output << "/* >>>>>>>>>> BEGIN #{file.name}.#{self.class.ext} */\n"
+          output << "#{file.source}\n"
+        end
       end
     end
 
     # sort first by the naming heuristics, then by dependencies
     def sort!
       # define sorting heuristics in a subclass
+    end
+
+    def destination(file)
+      "#{destination_root}/#{file}"
     end
 
   private
@@ -94,12 +101,20 @@ module SproutCore
   class JavaScriptEntries < Entries
     self.ext = "js"
 
+    self.locale = "english"        # hardcode for now
+
     def compile
-      super << %[\nSC.bundleDidLoad("#{@package}/#{@target}");\n]
+      @compiled ||= begin
+        each do |entry|
+          entry.source.gsub!(/sc_super\(\s*\)/, "arguments.callee.base.apply(this, arguments)")
+        end
+
+        super << %[\nSC.bundleDidLoad("#{@package}/#{@target}");\n]
+      end
     end
 
     def sort!
-      step1 = sort_by! do |entry|
+      sort_by! do |entry|
         sort_by = case entry.name
         # TODO: Allow preferred filename customization
         when %r{^(\w+\.)lproj/strings$}       then -3
@@ -112,6 +127,7 @@ module SproutCore
 
         [sort_by, entry.name]
       end
+
       replace(tsort)
     end
 
@@ -164,22 +180,24 @@ module SproutCore
     end
 
     def compile
-      each do |entry|
-        entry.source.gsub!(/(sc_static|static_url|sc_target)\(\s*['"](.+)['"]\s*\)/) do |resource|
-          url = static_or_fallback($2)
+      @compiled ||= begin
+        each do |entry|
+          entry.source.gsub!(/(sc_static|static_url|sc_target)\(\s*['"](.+)['"]\s*\)/) do |resource|
+            url = static_or_fallback($2)
 
-          if url && url.destination
-            "url('#{url.destination}')"
-          else
-            puts "WARN: static not found: #{$2} (from #{entry.name}"
+            if url && url.destination
+              "url('#{url.destination}')"
+            else
+              puts "WARN: static not found: #{$2} (from #{entry.name}"
+            end
           end
         end
-      end
 
-      super
+        super
+      end
     end
 
-    def destination(default = "stylesheet.js")
+    def destination(default = "stylesheet.css")
       super
     end
   end
