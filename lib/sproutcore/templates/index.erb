@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html<% unless @config[:manifest].blank? %> manifest="app.manifest"<% end %>>
+  <head>
+    <meta http-equiv="Content-type" content="text/html; charset=utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=8" />
+    <meta http-equiv="Content-Script-Type" content="text/javascript" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="<%= @config[:manifest] || 'default' %>" />
+    <meta name="viewport" content="initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <link rel="apple-touch-icon<%= '-precomposed' if @config[:precomposed_icon] %>" href="<%= sc_static(@config[:icon] || 'sproutcore-logo.png') %>" />
+	  <link rel="apple-touch-startup-image" media="screen and (orientation:portrait)" href="<%= sc_static(@config[:startup_image_portrait] || 'sproutcore-startup-portrait.png') %>" /> 
+	  <link rel="apple-touch-startup-image" media="screen and (orientation:landscape)" href="<%= sc_static(@config[:startup_image_landscape] || 'sproutcore-startup-landscape.png') %>" />
+	  <link rel="shortcut icon" href="<%= sc_static(@config[:favicon] || 'favicon.ico') %>" type="image/x-icon" />
+
+    <title><%= @config[:title] %></title>
+    <%= stylesheets %>
+  </head>
+
+  <body class="<%= [config[:theme_name] || "sc-theme", "focus"].compact.join(' ') %>">  
+    <%= bootstrap %>
+
+    <div id="loading">
+      <p class="loading">Loading...</p>
+    </div>
+
+    <%= javascripts %>
+	</body>
+</html>

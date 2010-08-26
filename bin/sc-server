@@ -1,0 +1,4 @@
+#!/usr/bin/env ruby
+
+require "sproutcore"
+SproutCore::Server.new.start

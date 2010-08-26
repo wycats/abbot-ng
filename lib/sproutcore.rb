@@ -1,0 +1,5 @@
+require "sproutcore/entries"
+require "sproutcore/manifest"
+require "sproutcore/html"
+require "sproutcore/server"
+require "sproutcore/version"
