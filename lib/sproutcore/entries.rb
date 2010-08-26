@@ -33,6 +33,16 @@ module SproutCore
       @target_dir   = "#{@directory}/#{target_type}/#{target}"
       @entry_lookup = {}
 
+      # make it faster to look up an entry by name, since
+      # dependencies are Strings
+      @target       = target
+      @target_type  = target_type
+      @package      = File.basename(@directory)
+
+      process_files
+    end
+
+    def process_files
       Dir["#{@target_dir}/**/*.#{self.class.ext}"].each do |file|
         next if file =~ %r{^#{@target_dir}/(debug|tests)}
         source = File.read(file)
@@ -40,12 +50,6 @@ module SproutCore
 
         add Entry.new(file[%r{#{@target_dir}/(.*)\.#{self.class.ext}}, 1], requires, source)
       end
-
-      # make it faster to look up an entry by name, since
-      # dependencies are Strings
-      @target       = target
-      @target_type  = target_type
-      @package      = File.basename(@directory)
     end
 
     def inspect
@@ -136,21 +140,17 @@ module SproutCore
     end
   end
 
-  class CssEntries < Entries
+  class StaticEntries < Entries
     StaticEntry = Struct.new(:source, :destination)
 
-    self.ext = "css"
-
     self.locale = "english"        # hardcode for now
-    self.theme  = "standard_theme" # hardcode for now
-
-    attr_accessor :statics
 
     def initialize(*)
+      @map = {}
       super
+    end
 
-      @statics = {}
-
+    def process_files
       Dir["#{@target_dir}/**/*.{gif,jpg,png}"].each do |file|
         file =~ %r{^#{@directory}/#{@target_type}/#{@target}/(?:#{self.class.locale}\.lproj\/)?(.*)$}
         add_static(file, $1)
@@ -165,18 +165,36 @@ module SproutCore
       destination = "#{destination_root}/#{$3}#{$4}"
       entry = StaticEntry.new(source, destination)
 
-      @statics["#{$2}#{$3}#{$4}"] = entry
-      @statics["#{$3}#{$4}"] = entry
-      @statics["#{$2}#{$3}"] = entry
-      @statics[$3] = entry
+      @map["#{$2}#{$3}#{$4}"] = entry
+      @map["#{$3}#{$4}"] = entry
+      @map["#{$2}#{$3}"] = entry
+      @map[$3] = entry
     end
 
-    def static_or_fallback(static)
-      @statics[static] || @manifest.find_static(static)
+    def find_static(name)
+      @map[name]
     end
+  end
+
+  class CssEntries < Entries
+    self.ext = "css"
+
+    self.locale = "english"        # hardcode for now
+    self.theme  = "standard_theme" # hardcode for now
+
+    attr_accessor :statics
 
     def sort!
       sort_by!(&:name)
+    end
+
+    def associate_statics(statics)
+      @statics = statics
+      self
+    end
+
+    def static_or_fallback(name)
+      @statics.find_static(name) || @manifest.find_static(name)
     end
 
     def compile

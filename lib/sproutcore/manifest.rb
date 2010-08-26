@@ -5,19 +5,18 @@ module SproutCore
     def initialize
       @javascripts = {}
       @stylesheets = {}
+      @statics     = {}
     end
 
     def add_target(root, target, target_type)
-      @javascripts[target] = JavaScriptEntries.from_directory(root, target, target_type).manifest(self)
-      @stylesheets[target] = CssEntries.from_directory(root, target, target_type).manifest(self)
-    end
-
-    def puts(*)
+      @javascripts[target]       = JavaScriptEntries.from_directory(root, target, target_type).manifest(self)
+      statics = @statics[target] = StaticEntries.new(root, target, target_type).manifest(self)
+      @stylesheets[target]       = CssEntries.from_directory(root, target, target_type).manifest(self).associate_statics(statics)
     end
 
     def find_static(static)
-      @stylesheets.each do |target, list|
-        if found_static = list.statics[static]
+      @statics.each do |target, list|
+        if found_static = list.find_static(static)
           return found_static
         end
       end
