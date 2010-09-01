@@ -28,10 +28,6 @@ module SproutCore
       list.sort!
     end
 
-    # Even though apps have their own copies of the EntryLists, they share Entry
-    # objects
-    @@entries = {}
-
     def initialize(dir, target, target_type)
       @directory    = File.expand_path(dir)
       @target_dir   = "#{@directory}/#{target_type}/#{target}"
@@ -50,14 +46,10 @@ module SproutCore
       Dir["#{@target_dir}/**/*.#{self.class.ext}"].each do |file|
         next if file =~ %r{^#{@target_dir}/(debug|tests)}
 
-        @@entries[file] ||= begin
-          source = File.read(file)
-          requires = source.scan(%r{\b(?:sc_)?require\(\s*['"](.*)['"]\)}).flatten
+        source = File.read(file)
+        requires = source.scan(%r{\b(?:sc_)?require\(\s*['"](.*)['"]\)}).flatten
 
-          Entry.new(file[%r{#{@target_dir}/(.*)\.#{self.class.ext}}, 1], requires, source)
-        end
-
-        add @@entries[file]
+        add Entry.new(file[%r{#{@target_dir}/(.*)\.#{self.class.ext}}, 1], requires, source)
       end
     end
 
@@ -65,8 +57,8 @@ module SproutCore
       "#<Entries: #{map(&:name).join(", ")}>"
     end
 
-    def manifest(root_manifest)
-      @manifest = root_manifest
+    def app(app)
+      @app = app
       self
     end
 
@@ -96,21 +88,19 @@ module SproutCore
     end
 
     def content_for(file)
-      result = destinations[file]
-      result.call if result
+      destinations[file]
     end
 
     def destinations
       @destinations ||= begin
-        # the destinations Hash is lazy so we can have a copy of it in apps for the
-        # list of JS/CSS used in a particular app. The Entries themselves are globally
-        # shared
-        if @combine
-          {"#{destination_root}/#{@combine}" => proc { compile }}
+        if !any?
+          {}
+        elsif @combine
+          {"#{destination_root}/#{@combine}" => compile }
         else
           results = {}
           each do |entry|
-            results["#{destination_root}/#{entry.name}.#{self.class.ext}"] = proc { entry.source }
+            results["#{destination_root}/#{entry.name}.#{self.class.ext}"] = entry.source
           end
           results
         end
@@ -224,7 +214,7 @@ module SproutCore
     end
 
     def static_or_fallback(name)
-      @statics.find_static(name) || @manifest.find_static(name)
+      @statics.find_static(name) || @app.find_static(name)
     end
 
     def compile

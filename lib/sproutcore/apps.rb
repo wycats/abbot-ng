@@ -2,18 +2,28 @@ module SproutCore
   class Target
     attr_reader :javascripts, :stylesheets
 
+    def self.new(root, target, target_type, combine)
+      @targets ||= Hash.new { |h,k| h[k] = Hash.new { |h,k| h[k] = {} } }
+      @targets[root][target][target_type] ||= super
+    end
+
     def initialize(root, target, target_type, combine)
       @root, @target, @target_type, @combine = root, target, target_type, combine
+      @setup = false
     end
 
     def setup_target(app)
-      @javascripts = JavaScriptEntries.from_directory(@root, @target, @target_type).manifest(app)
+      return self if @setup
+      @setup = true
+
+      @javascripts = JavaScriptEntries.from_directory(@root, @target, @target_type).app(app)
       @javascripts.combine("javascript.js") if @combine
 
-      @statics = StaticEntries.new(@root, @target, @target_type).manifest(app)
+      @statics = StaticEntries.new(@root, @target, @target_type).app(app)
 
-      @stylesheets = CssEntries.from_directory(@root, @target, @target_type).manifest(app).associate_statics(@statics)
+      @stylesheets = CssEntries.from_directory(@root, @target, @target_type).app(app).associate_statics(@statics)
       @stylesheets.combine("stylesheet.css") if @combine
+
       self
     end
 
@@ -31,8 +41,12 @@ module SproutCore
       @apps       = {}
     end
 
+    def app?(app)
+      @app_names.key?(app)
+    end
+
     def app_for(app)
-      name = @app_names.key?(app) ? app : "all"
+      name = app?(app) ? app : "all"
 
       return @apps[name] if @apps.key?(name)
 
