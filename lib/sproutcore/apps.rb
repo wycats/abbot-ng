@@ -1,27 +1,33 @@
 module SproutCore
   class Target
-    attr_reader :javascripts, :stylesheets
+    attr_reader :javascripts, :stylesheets, :target_name
 
-    def self.new(root, target, target_type, combine)
-      @targets ||= Hash.new { |h,k| h[k] = Hash.new { |h,k| h[k] = {} } }
-      @targets[root][target][target_type] ||= super
+    # Only create one Target instance for a given location. When a file in the
+    # Target changes, we can expire everything about the target in one shot.
+    def self.new(directory, combine)
+      targets[directory] ||= super
     end
 
-    def initialize(root, target, target_type, combine)
-      @root, @target, @target_type, @combine = root, target, target_type, combine
-      @setup = false
+    def self.targets
+      @targets ||= {}
+    end
+
+    def initialize(directory, combine)
+      target_name  = File.basename(directory)
+      target_root  = File.dirname(directory)
+      target_type  = File.basename(target_root)
+      package_root = File.dirname(target_root)
+
+      @root, @target_name, @target_type, @combine = package_root, target_name, target_type, combine
     end
 
     def setup_target(app)
-      return self if @setup
-      @setup = true
-
-      @javascripts = JavaScriptEntries.from_directory(@root, @target, @target_type).app(app)
+      @javascripts = JavaScriptEntries.from_directory(@root, @target_name, @target_type).app(app)
       @javascripts.combine("javascript.js") if @combine
 
-      @statics = StaticEntries.new(@root, @target, @target_type).app(app)
+      @statics = StaticEntries.new(@root, @target_name, @target_type).app(app)
 
-      @stylesheets = CssEntries.from_directory(@root, @target, @target_type).app(app).associate_statics(@statics)
+      @stylesheets = CssEntries.from_directory(@root, @target_name, @target_type).app(app).associate_statics(@statics)
       @stylesheets.combine("stylesheet.css") if @combine
 
       self
@@ -41,45 +47,99 @@ module SproutCore
       @apps       = {}
     end
 
-    def app?(app)
-      @app_names.key?(app)
+    def app?(name)
+      @app_names.key?(name)
     end
 
-    def app_for(app)
-      name = app?(app) ? app : "all"
+    # Return the app for a particular name. For frameworks and themes that are
+    # not part of an app, we use the special "all" app name
+    def app_for(name)
+      app_name = app?(name) ? name : "all"
 
-      return @apps[name] if @apps.key?(name)
-
-      application = App.new(name)
-      @roots.each do |root, combine|
-        application.add_root(root, combine)
-      end
-      application.add_targets
-      @apps[name] = application
+      @apps[name] ||= App.new(app_name, @roots)
     end
 
+    # Add a new root. Load in the Buildfile at the root as well
     def add_root(root, combine = true)
+      root = File.expand_path(root)
+
       Dir["#{root}/apps/*"].each do |app|
         @app_names[File.basename(app)] = nil
       end
 
-      root = File.expand_path(root)
-      Buildfile.evaluate("#{root}/Buildfile")
+      Buildfile.evaluate("#{root}/Buildfile") if File.exist?("#{root}/Buildfile")
       @roots[root] = combine
     end
   end
 
   class App
-    def initialize(app)
+
+    # Every app has every root in its targets, but doesn't have other application
+    # targets (just frameworks and themes)
+    def initialize(app, roots)
       @targets = {}
       @roots   = {}
       @app     = app
+
+      roots.each { |root, combine| add_root(root, combine) }
+      add_targets
     end
 
     def to_s
       "#<App: #{@app}>"
     end
 
+    # Search for statics from the most specific to least specific (from the current
+    # target down the dependency chain)
+    def find_static(static)
+      @targets.reverse_each.find do |name, target|
+        if found_static = target.find_static(static)
+          return found_static
+        end
+      end
+    end
+
+    MIMES     = {"png" => "image/png"}
+
+    def content_for(url, filename)
+      case filename
+      when /\.js$/
+        each_javascript do |list|
+          body = list.content_for(url)
+          return ["application/javascript", body] if body
+        end
+      when /\.css$/
+        each_stylesheet do |list|
+          body = list.content_for(url)
+          return ["text/css", body] if body
+        end
+      else
+        if file = find_static(filename)
+          return [MIMES[file.source[/^.*\.([^\.]*)$/, 1]], File.open(file.source, "rb")]
+        end
+      end
+    end
+
+    def each_javascript
+      @targets.each do |name, target|
+        yield target.javascripts
+      end
+      nil
+    end
+
+    def each_stylesheet
+      @targets.each do |name, target|
+        yield target.stylesheets
+      end
+      nil
+    end
+
+    # get the combined bootstrap file
+    def bootstrap
+      @targets["bootstrap"].javascripts.destinations.keys.first
+    end
+
+  private
     def add_root(root, combine = true)
       @roots[root] = combine
     end
@@ -100,43 +160,12 @@ module SproutCore
         app = "#{root}/apps/#{@app}"
         add_target(app, combine) if File.exist?(app)
       end
+      self
     end
 
     def add_target(directory, combine = true)
-      target_name  = File.basename(directory)
-      target_root  = File.dirname(directory)
-      target_type  = File.basename(target_root)
-      package_root = File.dirname(target_root)
-
-      @targets[target_name] = Target.new(package_root, target_name, target_type, combine).setup_target(self)
-    end
-
-    def find_static(static)
-      @targets.find do |name, target|
-        if found_static = target.find_static(static)
-          return found_static
-        end
-      end
-    end
-
-    def each_javascript
-      @targets.each do |name, target|
-        yield target.javascripts
-      end
-    end
-
-    def each_stylesheet
-      @targets.each do |name, target|
-        yield target.stylesheets
-      end
-    end
-
-    def find_js(js_target)
-      @targets[js_target].javascripts
-    end
-
-    def find_css(css_target)
-      @targets[css_target].stylesheets
+      target = Target.targets[directory] || Target.new(directory, combine).setup_target(self)
+      @targets[target.target_name] = target
     end
   end
 end

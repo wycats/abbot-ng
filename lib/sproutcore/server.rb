@@ -8,7 +8,6 @@ module SproutCore
     end
 
     EXPIRES   = (Time.now + (60 * 60 * 24 * 30)).rfc2822
-    MIMES     = {"png" => "image/png"}
     NOT_FOUND = [404, {"Content-Type" => "text/html"}, ["Not Found"]]
 
     def response(content_type, body, expires = EXPIRES)
@@ -17,44 +16,27 @@ module SproutCore
     end
 
     def call(env)
-      url    = env["PATH_INFO"]
-      return NOT_FOUND if url =~ /favicon\.ico/
+      url = env["PATH_INFO"]
+      static = url =~ %r{^/static/(\w+)/([^/]+)/(.*)$}
 
-      static = url =~ %r{^/static/en/([^/]+)/(.*)$}
+      locale = $1
+      target = $2
+      file   = $3
 
-      target = $1
-      type   = $2
-
-      unless static
-        app = url.sub(%r{^/}, '')
-
-        if @apps.app?(app)
-          return response("text/html", @context.render(app))
-        else
-          return NOT_FOUND
-        end
-      end
-
-      app = @apps.app_for(target)
-
-      case type
-      when /\.js$/
-        app.each_javascript do |list|
-          body = list.content_for(url)
-          return response("application/javascript", body) if body
-        end
-      when /\.css$/
-        app.each_stylesheet do |list|
-          body = list.content_for(url)
-          return response("text/css", body) if body
+      if static
+        app = @apps.app_for(target)
+        if content = app.content_for(url, file)
+          return response(*content)
         end
       else
-        if file = app.find_static(type)
-          response(MIMES[file.source[/^.*\.([^\.]*)$/, 1]], File.open(file.source, "rb"))
-        else
-          NOT_FOUND
+        app_name = url.sub(%r{^/}, '')
+
+        if @apps.app?(app_name)
+          return response("text/html", @context.render(app_name))
         end
       end
+
+      NOT_FOUND
     end
   end
 

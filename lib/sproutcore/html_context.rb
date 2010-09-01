@@ -15,8 +15,7 @@ module SproutCore
     end
 
     def bootstrap
-      location = @app.find_js("bootstrap").destinations.keys.first
-      %{<script type='text/javascript' src="#{location}"></script>}
+      %{<script type='text/javascript' src="#{@app.bootstrap}"></script>}
     end
 
     def stylesheets
