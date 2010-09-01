@@ -1,5 +1,6 @@
+require "sproutcore/buildfile"
 require "sproutcore/entries"
-require "sproutcore/manifest"
+require "sproutcore/apps"
 require "sproutcore/html_context"
 require "sproutcore/server"
 require "sproutcore/version"

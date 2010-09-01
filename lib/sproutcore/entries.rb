@@ -28,6 +28,10 @@ module SproutCore
       list.sort!
     end
 
+    # Even though apps have their own copies of the EntryLists, they share Entry
+    # objects
+    @@entries = {}
+
     def initialize(dir, target, target_type)
       @directory    = File.expand_path(dir)
       @target_dir   = "#{@directory}/#{target_type}/#{target}"
@@ -45,10 +49,15 @@ module SproutCore
     def process_files
       Dir["#{@target_dir}/**/*.#{self.class.ext}"].each do |file|
         next if file =~ %r{^#{@target_dir}/(debug|tests)}
-        source = File.read(file)
-        requires = source.scan(%r{\b(?:sc_)?require\(\s*['"](.*)['"]\)}).flatten
 
-        add Entry.new(file[%r{#{@target_dir}/(.*)\.#{self.class.ext}}, 1], requires, source)
+        @@entries[file] ||= begin
+          source = File.read(file)
+          requires = source.scan(%r{\b(?:sc_)?require\(\s*['"](.*)['"]\)}).flatten
+
+          Entry.new(file[%r{#{@target_dir}/(.*)\.#{self.class.ext}}, 1], requires, source)
+        end
+
+        add @@entries[file]
       end
     end
 
@@ -66,6 +75,12 @@ module SproutCore
       @entry_lookup[entry.name] = entry
     end
 
+    # use combine to mark a target as combinable
+    def combine(file)
+      @combine = file
+      self
+    end
+
     def compile
       @compiled ||= begin
         output = inject("") do |output, file|
@@ -80,11 +95,30 @@ module SproutCore
       # define sorting heuristics in a subclass
     end
 
-    def destination(file)
-      "#{destination_root}/#{file}"
+    def content_for(file)
+      result = destinations[file]
+      result.call if result
+    end
+
+    def destinations
+      @destinations ||= begin
+        # the destinations Hash is lazy so we can have a copy of it in apps for the
+        # list of JS/CSS used in a particular app. The Entries themselves are globally
+        # shared
+        if @combine
+          {"#{destination_root}/#{@combine}" => proc { compile }}
+        else
+          results = {}
+          each do |entry|
+            results["#{destination_root}/#{entry.name}.#{self.class.ext}"] = proc { entry.source }
+          end
+          results
+        end
+      end
     end
 
   private
+    # TODO: It seems like this part should be handled by the server, not the Entries
     def destination_root
       "/static/#{LOCALE_MAP[self.class.locale]}/#{@target}"
     end
@@ -133,10 +167,6 @@ module SproutCore
       end
 
       replace(tsort)
-    end
-
-    def destination(default = "javascript.js")
-      super
     end
   end
 
@@ -214,34 +244,6 @@ module SproutCore
         super
       end
     end
-
-    def destination(default = "stylesheet.css")
-      super
-    end
   end
 end
 
-__END__
-
-puts Benchmark.measure {
-Dir[File.expand_path("~/Code/sprout/sproutcore/frameworks/*")].each do |file|
-  begin
-    puts File.basename(file)
-    puts Benchmark.measure { SproutCore::CssEntries.from_directory("~/Code/sprout/sproutcore", File.basename(file)).compile }
-  rescue TSort::Cyclic => e
-    puts "Could not sort #{File.basename(file)}: #{e.message}"
-  end
-end
-}
-
-__END__
-puts Benchmark.measure {
-Dir[File.expand_path("~/Code/sprout/sproutcore/frameworks/*")].each do |file|
-  begin
-    puts File.basename(file)
-    puts Benchmark.measure { SproutCore::JavaScriptEntries.from_directory("~/Code/sprout/sproutcore", File.basename(file)).compile }
-  rescue TSort::Cyclic => e
-    puts "Could not sort #{File.basename(file)}: #{e.message}"
-  end
-end
-}

@@ -4,3 +4,7 @@ source :gemcutter
 gemspec
 
 gem "thin", :path => "~/Code/cool_stuff/thin"
+
+group :development do
+  gem "rspec", "~> 2.0.0.beta"
+end

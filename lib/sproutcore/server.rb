@@ -2,12 +2,14 @@ require "rack"
 require "erubis"
 
 module SproutCore
-  class App
-    def initialize(context, manifest)
-      @context, @manifest = context, manifest
+  class Application
+    def initialize(context, apps)
+      @context, @apps = context, apps
     end
 
-    EXPIRES = (Time.now + (60 * 60 * 24 * 30)).rfc2822
+    EXPIRES   = (Time.now + (60 * 60 * 24 * 30)).rfc2822
+    MIMES     = {"png" => "image/png"}
+    NOT_FOUND = [404, {"Content-Type" => "text/html"}, ["Not Found"]]
 
     def response(content_type, body, expires = EXPIRES)
       body = body.is_a?(String) ? [body] : body
@@ -15,43 +17,42 @@ module SproutCore
     end
 
     def call(env)
-      url = env["PATH_INFO"]
+      url    = env["PATH_INFO"]
+      return NOT_FOUND if url =~ /favicon\.ico/
 
-      if url == "/"
-        [200, {"Content-Type" => "text/html"}, [@context.render]]
-      else
-        url =~ %r{^/static/en/([^/]+)/(.*)$}
+      static = url =~ %r{^/static/en/([^/]+)/(.*)$}
 
-        target = $1
-        type   = $2
+      target = $1
+      type   = $2
 
-        # TODO: HARDCODED
-        if target == "todos"
-          root = "/Users/wycats/Code/sprout/todos/apps/todos"
-          body = File.read("#{root}/#{type}")
+      unless static
+        app = url.sub(%r{^/}, '')
 
-          if type =~ /\.js/
-            content_type = "application/javascript"
-          elsif type =~ /\.css/
-            content_type = "text/css"
-          end
-
-          return response(content_type, body)
-        end
-
-        case type
-        when "javascript.js"
-          body = @manifest.find_js(target).compile
-          response("application/javascript", body)
-        when "stylesheet.css"
-          body = @manifest.find_css(target).compile
-          response("text/css", body)
+        if @apps.app?(app)
+          return response("text/html", @context.render(app))
         else
-          if file = @manifest.find_static(type)
-            response("application/octet-stream", File.open(file.source, "rb"))
-          else
-            [404, {"Content-Type" => "text/html"}, []]
-          end
+          return NOT_FOUND
+        end
+      end
+
+      app = @apps.app_for(target)
+
+      case type
+      when /\.js$/
+        app.each_javascript do |list|
+          body = list.content_for(url)
+          return response("application/javascript", body) if body
+        end
+      when /\.css$/
+        app.each_stylesheet do |list|
+          body = list.content_for(url)
+          return response("text/css", body) if body
+        end
+      else
+        if file = app.find_static(type)
+          response(MIMES[file.source[/^.*\.([^\.]*)$/, 1]], File.open(file.source, "rb"))
+        else
+          NOT_FOUND
         end
       end
     end
@@ -59,31 +60,30 @@ module SproutCore
 
   class Server < ::Rack::Server
     def initialize
+      # TODO: HARDCODED
       sproutcore = File.expand_path("~/Code/sprout/sproutcore")
-      @manifest   = SproutCore::Manifest.new
+      @apps = SproutCore::Apps.new
+
+      @apps.add_root(sproutcore)
 
       # TODO: HARDCODED
-      %w(bootstrap runtime foundation datastore statechart desktop media).each do |target|
-        @manifest.add_target(sproutcore, target, :frameworks)
-      end
-
-      # TODO: HARDCODED
-      @manifest.add_target(sproutcore, "standard_theme", :themes)
+      @apps.add_root(File.expand_path("~/Code/sprout/todos"), false)
 
       template_location = File.expand_path("../templates/index.erb", __FILE__)
       template = Erubis::Eruby.new(File.read(template_location))
 
       HtmlContext.class_eval <<-RUBY, template_location, 0
-        def render
+        def render(app)
+          @app = @apps.app_for(app)
           #{template.src}
         end
       RUBY
 
-      @context = HtmlContext.new({}, @manifest)
+      @context = HtmlContext.new({}, @apps)
     end
 
     def app
-      App.new(@context, @manifest)
+      Application.new(@context, @apps)
     end
   end
 end
