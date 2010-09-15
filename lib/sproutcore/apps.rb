@@ -22,10 +22,10 @@ module SproutCore
     end
 
     def setup_target(app)
-      @javascripts = JavaScriptEntries.from_directory(@root, @target_name, @target_type).app(app)
-      @javascripts.combine("javascript.js") if @combine
-
       @statics = StaticEntries.new(@root, @target_name, @target_type).app(app)
+
+      @javascripts = JavaScriptEntries.from_directory(@root, @target_name, @target_type).app(app).associate_statics(@statics)
+      @javascripts.combine("javascript.js") if @combine
 
       @stylesheets = CssEntries.from_directory(@root, @target_name, @target_type).app(app).associate_statics(@statics)
       @stylesheets.combine("stylesheet.css") if @combine
@@ -145,14 +145,27 @@ module SproutCore
     end
 
     def add_targets
-      @roots.each do |root, combine|
-        # TODO: Get mode and target from config
-        Buildfile.requirements(:global, :all).each do |requirement|
-          Dir["#{root}/frameworks/{#{requirement},bootstrap}"].each do |target|
+      requirements = Buildfile.requirements(:global, :sproutweets)
+      unsatisfied  = requirements.dup
+
+      roots = @roots.dup
+
+      # TODO: Get mode and target from config
+
+      Buildfile.requirements(:global, :sproutweets).each do |requirement|
+        roots.each do |root, combine|
+          Dir["#{root}/frameworks/#{requirement}"].each do |target|
+            unsatisfied.delete(requirement)
+            add_target(target, combine)
+          end
+
+          Dir["#{root}/frameworks/bootstrap"].each do |target|
             add_target(target, combine)
           end
         end
+      end
 
+     roots.each do |root, combine|
         # TODO: Get theme name from config
         theme = "#{root}/themes/standard_theme"
         add_target(theme, combine) if File.exist?(theme)

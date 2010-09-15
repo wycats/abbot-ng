@@ -29,6 +29,13 @@ module SproutCore
         requirements[req] = Array(hash[req][:required])
       end
 
+      if target != :all
+        instance.requirements_for(mode, :all).each do |req|
+          requirements[req] ||= []
+          requirements[req].concat Array(hash[req][:required])
+        end
+      end
+
       requirements.tsort
     end
 
@@ -53,25 +60,34 @@ module SproutCore
     #
     # If an element is an Array or a Hash, merge it in with the
     # existing Array or Hash. Otherwise, set the value.
-    def config(name, hash)
+    def config(name, hash=nil)
       config = @current_mode[name.to_sym]
 
+      unless hash
+        yield config
+        return
+      end
+
       hash.each do |k,v|
-        case v
-        when Array
-          config[k] ||= []
-          config[k].concat(v)
-        when Hash
-          config[k] ||= {}
-          config[k].merge!(v)
+        if v.is_a? Array
+          config[k.to_sym] ||= []
+          config[k.to_sym].concat(v.map(&:to_sym))
+        elsif v.is_a? Hash
+          config[k.to_sym] ||= {}
+          config[k.to_sym].merge!(v)
+        elsif k == :required && v.is_a?(String)
+          config[k.to_sym] = v.to_sym
         else
-          config[k] = v
+          config[k.to_sym] = v
         end
       end
     end
 
+    def proxy(*)
+    end
+
     def requirements_for(mode, target, requirements = [])
-      reqs = Array(@modes[mode][target][:required])
+      reqs = Array(@modes[mode][target][:required]).uniq
       requirements.concat(reqs)
       reqs.each do |req|
         requirements_for(mode, req, requirements)

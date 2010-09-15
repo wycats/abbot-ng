@@ -28,6 +28,8 @@ module SproutCore
       list.sort!
     end
 
+    attr_accessor :statics
+
     def initialize(dir, target, target_type)
       @directory    = File.expand_path(dir)
       @target_dir   = "#{@directory}/#{target_type}/#{target}"
@@ -40,6 +42,11 @@ module SproutCore
       @package      = File.basename(@directory)
 
       process_files
+    end
+
+    def associate_statics(statics)
+      @statics = statics
+      self
     end
 
     def process_files
@@ -94,9 +101,9 @@ module SproutCore
     def destinations
       @destinations ||= begin
         if !any?
-          {}
+          results = {}
         elsif @combine
-          {"#{destination_root}/#{@combine}" => compile }
+          results = {"#{destination_root}/#{@combine}" => compile }
         else
           results = {}
           each do |entry|
@@ -104,10 +111,29 @@ module SproutCore
           end
           results
         end
+        process(results)
       end
     end
 
   private
+    def process(results)
+      results.each do |name, contents|
+        contents.gsub!(/(sc_static|static_url|sc_target)\(\s*['"](.+)['"]\s*\)/) do |resource|
+          url = static_or_fallback($2)
+
+          if url && url.destination
+            "url('#{url.destination}')"
+          else
+            puts "WARN: static not found: #{$2} (from #{entry.name}"
+          end
+        end
+      end
+    end
+
+    def static_or_fallback(name)
+      @statics.find_static(name) || @app.find_static(name)
+    end
+
     # TODO: It seems like this part should be handled by the server, not the Entries
     def destination_root
       "/static/#{LOCALE_MAP[self.class.locale]}/#{@target}"
@@ -131,12 +157,14 @@ module SproutCore
 
     self.locale = "english"        # hardcode for now
 
+    def destinations
+      @destinations ||= super.each do |name, contents|
+        contents.gsub!(/sc_super\(\s*\)/, "arguments.callee.base.apply(this, arguments)")
+      end
+    end
+
     def compile
       @compiled ||= begin
-        each do |entry|
-          entry.source.gsub!(/sc_super\(\s*\)/, "arguments.callee.base.apply(this, arguments)")
-        end
-
         super << %[\nSC.bundleDidLoad("#{@package}/#{@target}");\n]
       end
     end
@@ -153,7 +181,8 @@ module SproutCore
         else                                        0
         end
 
-        [sort_by, entry.name]
+        frameworks = entry.name =~ /^frameworks/ ? -1 : 0
+        [frameworks, sort_by, entry.name]
       end
 
       replace(tsort)
@@ -206,33 +235,6 @@ module SproutCore
 
     def sort!
       sort_by!(&:name)
-    end
-
-    def associate_statics(statics)
-      @statics = statics
-      self
-    end
-
-    def static_or_fallback(name)
-      @statics.find_static(name) || @app.find_static(name)
-    end
-
-    def compile
-      @compiled ||= begin
-        each do |entry|
-          entry.source.gsub!(/(sc_static|static_url|sc_target)\(\s*['"](.+)['"]\s*\)/) do |resource|
-            url = static_or_fallback($2)
-
-            if url && url.destination
-              "url('#{url.destination}')"
-            else
-              puts "WARN: static not found: #{$2} (from #{entry.name}"
-            end
-          end
-        end
-
-        super
-      end
     end
   end
 end
