@@ -1,0 +1,2 @@
+This code can boot and run a lot (but not all) SproutCore apps, but still has a few trivial things
+hardcoded to my local machine. Please hold off on using this until I make more progress.
